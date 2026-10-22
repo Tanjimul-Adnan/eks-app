@@ -95,7 +95,7 @@ jobs:
           updated_lines = []
           
           for line in lines:
-              # Detect service block start (e.g., "storefront:")
+              # Match service headers nested at exactly 2 spaces (e.g., "  storefront:")
               match_service = re.match(r"^ {2}(\w+):\s*$", line)
               if match_service:
                   service_name = match_service.group(1)
@@ -105,26 +105,31 @@ jobs:
                   else:
                       current_service = None
               
-              # Detect if we hit another top-level structural block
-              elif re.match(r"^\S", line) or re.match(r"^ {2}\w+:\s*$", line):
-                  current_service = None
+              # Break scope context if hitting alternative structural elements at the same indentation level
+              elif re.match(r"^ {0,1}\S", line) or re.match(r"^ {2}\w+:\s*$", line):
+                  if not match_service:
+                      current_service = None
                   
               if current_service:
-                  # Detect if entering image section inside the active service block
+                  # Detect entry into the nested image map section at exactly 4 spaces
                   if re.match(r"^ {4}image:\s*$", line):
                       in_image_block = True
                   elif in_image_block and not line.startswith("    "):
                       in_image_block = False
                       
                   if in_image_block:
-                      # Flexible whitespace matching for repository configuration keys
-                      if "repository:" in line:
+                      # Intercept the target declaration lines at exactly 6 spaces
+                      if "tag:" in line:
                           indent = len(line) - len(line.lstrip())
-                          line = f"{' ' * indent}repository: tanjimuladnan/{current_service}\n"
-                      # Flexible whitespace matching for tag configuration keys
-                      elif "tag:" in line:
-                          indent = len(line) - len(line.lstrip())
-                          line = f"{' ' * indent}tag: \"{sha}\"\n"
+                          repository_line = f"{' ' * indent}repository: tanjimuladnan/{current_service}\n"
+                          tag_line = f"{' ' * indent}tag: \"{sha}\"\n"
+                          
+                          # Inject both fields into the block
+                          line = repository_line + tag_line
+                          
+                      elif "repository:" in line:
+                          # Avoid duplicate lines if run iteratively
+                          continue
                           
               updated_lines.append(line)
               
