@@ -82,58 +82,54 @@ jobs:
           import os
           import re
           
-          # Unified variable to match the shell exported value name
           path = os.environ["HELM_VALUES_FILES"]
           sha = os.environ["SHA"]
           
           with open(path, encoding="utf-8") as f:
-              content = f.read()
+              lines = f.readlines()
               
-          for service in ("storefront", "catalog", "cart", "checkout"):
-              headers = list(
-                  re.finditer(rf"(?m)^  {re.escape(service)}:\s*$", content)
-              )
-              if len(headers) != 1:
-                  raise SystemExit(
-                      f"Could not find exactly one values section for {service}"
-                  )
+          services = ["storefront", "catalog", "cart", "checkout"]
+          current_service = None
+          in_image_block = False
+          
+          updated_lines = []
+          
+          for line in lines:
+              # Detect service block start (e.g., "storefront:")
+              match_service = re.match(r"^ {2}(\w+):\s*$", line)
+              if match_service:
+                  service_name = match_service.group(1)
+                  if service_name in services:
+                      current_service = service_name
+                      in_image_block = False
+                  else:
+                      current_service = None
               
-              # Fixed: Fetch from list index position [0]
-              start = headers[0].start()
-              end = len(content)
-              next_header = re.search(
-                  r"(?m)^  [A-Za-z0-9_-]+:\s*$", content[headers[0].end() :]
-              )
-              if next_header:
-                  end = headers[0].end() + next_header.start()
-              section = content[start:end]
-              image = re.search(r"(?ms)^    image:\s*\n(?P<body>.*)", section)
-              if not image:
-                  raise SystemExit(f"Could not find image configuration for {service}")
-              image_body, repository_count = re.subn(
-                  r"(?m)^      repository:\s*.*$",
-                  f"      repository: tanjimuladnan/{service}",
-                  image.group("body"),
-                  count=1,
-              )
-              image_body, tag_count = re.subn(
-                  r"(?m)^      tag:\s*.*$",
-                  f'      tag: "{sha}"',
-                  image_body,
-                  count=1,
-              )
-              if repository_count != 1 or tag_count != 1:
-                  raise SystemExit(
-                      f"Could not update repository and image tag for {service}"
-                  )
-              section = (
-                  section[: image.start("body")]
-                  + image_body
-              )
-              content = content[:start] + section + content[end:]
+              # Detect if we hit another top-level structural block
+              elif re.match(r"^\S", line) or re.match(r"^ {2}\w+:\s*$", line):
+                  current_service = None
+                  
+              if current_service:
+                  # Detect if entering image section inside the active service block
+                  if re.match(r"^ {4}image:\s*$", line):
+                      in_image_block = True
+                  elif in_image_block and not line.startswith("    "):
+                      in_image_block = False
+                      
+                  if in_image_block:
+                      # Flexible whitespace matching for repository configuration keys
+                      if "repository:" in line:
+                          indent = len(line) - len(line.lstrip())
+                          line = f"{' ' * indent}repository: tanjimuladnan/{current_service}\n"
+                      # Flexible whitespace matching for tag configuration keys
+                      elif "tag:" in line:
+                          indent = len(line) - len(line.lstrip())
+                          line = f"{' ' * indent}tag: \"{sha}\"\n"
+                          
+              updated_lines.append(line)
               
           with open(path, "w", encoding="utf-8") as f:
-              f.write(content)
+              f.writelines(updated_lines)
           PY
 
           git config user.name "github-actions[bot]"
