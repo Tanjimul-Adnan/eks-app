@@ -55,14 +55,10 @@ jobs:
           SHA: ${{ github.sha }}
           GH_TOKEN: ${{ secrets.GH_PAT }}
           HELM_REPO: ${{ vars.HELM_REPO }}
-          HELM_VALUES_FILE: ${{ vars.HELM_VALUES_FILE }}
+          HELM_VALUES_FILE: ${{ vars.HELM_VALUES_FILE || 'apps/retail-shop/values-dev.yaml' }}
         run: |
           set -euo pipefail
           cd helm-repo
-          if [[ -z "$HELM_VALUES_FILE" ]]; then
-            echo "::error::Set the HELM_VALUES_FILE repository variable to a values file path in the Helm repository."
-            exit 1
-          fi
           if [[ ! -f "$HELM_VALUES_FILE" ]]; then
             echo "::error::HELM_VALUES_FILE '$HELM_VALUES_FILE' does not exist in the Helm repository."
             exit 1
