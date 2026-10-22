@@ -1,33 +1,32 @@
 name: build-publish-gitops
+
 on:
   push:
     branches: [main]
   workflow_dispatch:
+
+# Combined and declared correctly at the top level
 permissions:
-  contents: read
+  contents: write
   id-token: write
-jobs:
-  build-publish:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Configure AWS credentials 
-        uses: aws-actions/configure-aws-credentials@v3
-        AWS_REGION: ${{ vars.AWS_REGION }}
-        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      permissions:
-  contents: read
   packages: write
 
 jobs:
-  build-and-push:
+  build-publish:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. Authenticate to GHCR using the automated token
+      # Fixed: Added the missing "with:" block and changed AWS_REGION to "aws-region"
+      - name: Configure AWS credentials 
+        uses: aws-actions/configure-aws-credentials@v3
+        with:
+          aws-region: ${{ vars.AWS_REGION }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      # Authenticate to GHCR using the automated token
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
@@ -35,7 +34,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # 3. Build and push your image
+      # Build and push your images dynamically
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
@@ -44,7 +43,6 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository_owner }}/my-app:latest
             ghcr.io/${{ github.repository_owner }}/my-app:${{ github.sha }}
-
         
       - name: Checkout Helm GitOps repository
         uses: actions/checkout@v4
@@ -52,6 +50,7 @@ jobs:
           repository: ${{ vars.HELM_REPO }}
           token: ${{ secrets.GH_PAT }}
           path: helm-repo
+
       - name: Update image tags and create PR
         env:
           SHA: ${{ github.sha }}
