@@ -78,7 +78,7 @@ jobs:
             git checkout -b "$BRANCH"
           fi
 
-          python - <<'PY'
+                    python - <<'PY'
           import os
           import re
           
@@ -95,7 +95,7 @@ jobs:
           updated_lines = []
           
           for line in lines:
-              # Match service headers nested at exactly 2 spaces (e.g., "  storefront:")
+              # 1. Track the active service target block context
               match_service = re.match(r"^ {2}(\w+):\s*$", line)
               if match_service:
                   service_name = match_service.group(1)
@@ -104,38 +104,28 @@ jobs:
                       in_image_block = False
                   else:
                       current_service = None
-              
-              # Break scope context if hitting alternative structural elements at the same indentation level
               elif re.match(r"^ {0,1}\S", line) or re.match(r"^ {2}\w+:\s*$", line):
                   if not match_service:
                       current_service = None
                   
               if current_service:
-                  # Detect entry into the nested image map section at exactly 4 spaces
+                  # 2. Track when we are inside the image subsection
                   if re.match(r"^ {4}image:\s*$", line):
                       in_image_block = True
                   elif in_image_block and not line.startswith("    "):
                       in_image_block = False
                       
-                  if in_image_block:
-                      # Intercept the target declaration lines at exactly 6 spaces
-                      if "tag:" in line:
-                          indent = len(line) - len(line.lstrip())
-                          repository_line = f"{' ' * indent}repository: tanjimuladnan/{current_service}\n"
-                          tag_line = f"{' ' * indent}tag: \"{sha}\"\n"
-                          
-                          # Inject both fields into the block
-                          line = repository_line + tag_line
-                          
-                      elif "repository:" in line:
-                          # Avoid duplicate lines if run iteratively
-                          continue
+                  # 3. Only update the tag key directly
+                  if in_image_block and "tag:" in line:
+                      indent = len(line) - len(line.lstrip())
+                      line = f"{' ' * indent}tag: \"{sha}\"\n"
                           
               updated_lines.append(line)
               
           with open(path, "w", encoding="utf-8") as f:
               f.writelines(updated_lines)
           PY
+
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
