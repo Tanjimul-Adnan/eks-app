@@ -5,45 +5,40 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# Combined and declared correctly at the top level
 permissions:
-  contents: write
-  id-token: write
-  packages: write
+  contents: read
 
 jobs:
   build-publish:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        service: [storefront, catalog, cart, checkout]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Fixed: Added the missing "with:" block and changed AWS_REGION to "aws-region"
-      - name: Configure AWS credentials 
-        uses: aws-actions/configure-aws-credentials@v3
-        with:
-          aws-region: ${{ vars.AWS_REGION }}
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-
-      # Authenticate to GHCR using the automated token
-      - name: Log in to GitHub Container Registry
+      - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          username: tanjimuladnan
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # Build and push your images dynamically
-      - name: Build and push Docker image
+      - name: Build and push ${{ matrix.service }} image
         uses: docker/build-push-action@v5
         with:
           context: .
+          file: services/${{ matrix.service }}/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/my-app:latest
-            ghcr.io/${{ github.repository_owner }}/my-app:${{ github.sha }}
-        
+            docker.io/tanjimuladnan/${{ matrix.service }}:latest
+            docker.io/tanjimuladnan/${{ matrix.service }}:${{ github.sha }}
+
+  update-gitops:
+    needs: build-publish
+    runs-on: ubuntu-latest
+    steps:
       - name: Checkout Helm GitOps repository
         uses: actions/checkout@v4
         with:
@@ -60,21 +55,82 @@ jobs:
         run: |
           set -euo pipefail
           cd helm-repo
-          python - <<'PY'
-          import os, re
-          path = os.environ["HELM_VALUES_FILE"]
-          with open(path, encoding="utf-8") as f: content = f.read()
-          for service in ("storefront", "catalog", "cart", "checkout"):
-              pattern = rf'(?ms)(^  {service}:\n.*?^    image:\n.*?^      tag:\s*)["\']?[^\s]+'
-              content, count = re.subn(pattern, lambda m: m.group(1) + '"' + os.environ["SHA"] + '"', content, count=1)
-              if count != 1: raise SystemExit("Could not update image tag for " + service)
-          with open(path, "w", encoding="utf-8") as f: f.write(content)
-          PY
           BRANCH="bot/retail-${GITHUB_SHA::12}"
+          if git ls-remote --exit-code --heads origin "refs/heads/$BRANCH" > /dev/null; then
+            git fetch origin "$BRANCH"
+            git checkout -B "$BRANCH" FETCH_HEAD
+          else
+            git checkout -b "$BRANCH"
+          fi
+
+          python - <<'PY'
+          import os
+          import re
+
+          path = os.environ["HELM_VALUES_FILE"]
+          sha = os.environ["SHA"]
+          with open(path, encoding="utf-8") as f:
+              content = f.read()
+
+          for service in ("storefront", "catalog", "cart", "checkout"):
+              headers = list(
+                  re.finditer(rf"(?m)^  {re.escape(service)}:\s*$", content)
+              )
+              if len(headers) != 1:
+                  raise SystemExit(
+                      f"Could not find exactly one values section for {service}"
+                  )
+
+              start = headers[0].start()
+              end = len(content)
+              next_header = re.search(
+                  r"(?m)^  [A-Za-z0-9_-]+:\s*$", content[headers[0].end() :]
+              )
+              if next_header:
+                  end = headers[0].end() + next_header.start()
+              section = content[start:end]
+              image = re.search(r"(?ms)^    image:\s*\n(?P<body>.*)", section)
+              if not image:
+                  raise SystemExit(f"Could not find image configuration for {service}")
+
+              image_body, repository_count = re.subn(
+                  r"(?m)^      repository:\s*.*$",
+                  f"      repository: tanjimuladnan/{service}",
+                  image.group("body"),
+                  count=1,
+              )
+              image_body, tag_count = re.subn(
+                  r"(?m)^      tag:\s*.*$",
+                  f'      tag: "{sha}"',
+                  image_body,
+                  count=1,
+              )
+              if repository_count != 1 or tag_count != 1:
+                  raise SystemExit(
+                      f"Could not update repository and image tag for {service}"
+                  )
+
+              section = (
+                  section[: image.start("body")]
+                  + image_body
+              )
+              content = content[:start] + section + content[end:]
+
+          with open(path, "w", encoding="utf-8") as f:
+              f.write(content)
+          PY
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git checkout -b "$BRANCH"
           git add "$HELM_VALUES_FILE"
-          git commit -m "chore: update retail shop images to ${SHA}"
-          git push origin "$BRANCH"
-          gh pr create --repo "$HELM_REPO" --base main --head "$BRANCH" --title "chore: deploy retail shop ${SHA}" --body "Automated image update from retail-shop-app commit ${SHA}. Review and merge to deploy via Argo CD."
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: update retail shop images to ${SHA}"
+            git push origin "$BRANCH"
+          fi
+          PR_URL="$(gh pr list --repo "$HELM_REPO" --head "${HELM_REPO%%/*}:$BRANCH" --state open --json url --jq '.[0].url // empty')"
+          if [[ -z "$PR_URL" ]]; then
+            if ! git ls-remote --exit-code --heads origin "refs/heads/$BRANCH" > /dev/null; then
+              echo "Image values are already up to date; no pull request is needed."
+              exit 0
+            fi
+            gh pr create --repo "$HELM_REPO" --base main --head "$BRANCH" --title "chore: deploy retail shop ${SHA}" --body "Automated Docker Hub image update from retail-shop-app commit ${SHA}. Review and merge to deploy via Argo CD."
+          fi
