@@ -1,0 +1,89 @@
+name: build-publish-gitops
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+
+jobs:
+  build-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout application
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push image
+        id: image
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          docker build --pull -t "$REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" .
+          docker push "$REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+          echo "uri=$REGISTRY/$ECR_REPOSITORY" >> "$GITHUB_OUTPUT"
+          echo "tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout Helm GitOps repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.HELM_REPO }}
+          token: ${{ secrets.GH_PAT }}
+          path: helm-repo
+
+      - name: Update image and open pull request
+        env:
+          IMAGE_URI: ${{ steps.image.outputs.uri }}
+          IMAGE_TAG: ${{ steps.image.outputs.tag }}
+          HELM_VALUES_FILE: ${{ vars.HELM_VALUES_FILE }}
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+          HELM_REPO: ${{ vars.HELM_REPO }}
+        run: |
+          set -euo pipefail
+          cd helm-repo
+          python - <<'PY'
+          import os, re
+          path = os.environ["HELM_VALUES_FILE"]
+          with open(path, encoding="utf-8") as f:
+              content = f.read()
+          content, n1 = re.subn(r'(?m)^(\\s*repository:\\s*).+$',
+                               lambda m: m.group(1) + os.environ["IMAGE_URI"],
+                               content, count=1)
+          content, n2 = re.subn(r'(?m)^(\\s*tag:\\s*).+$',
+                               lambda m: m.group(1) + '"' + os.environ["IMAGE_TAG"] + '"',
+                               content, count=1)
+          if n1 != 1 or n2 != 1:
+              raise SystemExit("Could not uniquely update image.repository and image.tag")
+          with open(path, "w", encoding="utf-8") as f:
+              f.write(content)
+          PY
+          BRANCH="bot/image-${GITHUB_SHA::12}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git add "$HELM_VALUES_FILE"
+          git commit -m "chore: update workshop-app image to ${IMAGE_TAG}"
+          git push origin "$BRANCH"
+          gh pr create \
+            --repo "$HELM_REPO" \
+            --base main \
+            --head "$BRANCH" \
+            --title "chore: deploy workshop-app ${IMAGE_TAG}" \
+            --body "Automated image update from eks-app commit ${GITHUB_SHA}. Review and merge to deploy via Argo CD."
