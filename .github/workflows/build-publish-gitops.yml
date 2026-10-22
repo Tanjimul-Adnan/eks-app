@@ -6,7 +6,11 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
+  id-token: write
+  packages: write
+  pull-requests: write # 👈 Add this line to allow PR creation
+ 
 
 jobs:
   build-publish:
@@ -55,6 +59,14 @@ jobs:
         run: |
           set -euo pipefail
           cd helm-repo
+          if [[ -z "$HELM_VALUES_FILE" ]]; then
+            echo "::error::Set the HELM_VALUES_FILE repository variable to a values file path in the Helm repository."
+            exit 1
+          fi
+          if [[ ! -f "$HELM_VALUES_FILE" ]]; then
+            echo "::error::HELM_VALUES_FILE '$HELM_VALUES_FILE' does not exist in the Helm repository."
+            exit 1
+          fi
           BRANCH="bot/retail-${GITHUB_SHA::12}"
           if git ls-remote --exit-code --heads origin "refs/heads/$BRANCH" > /dev/null; then
             git fetch origin "$BRANCH"
