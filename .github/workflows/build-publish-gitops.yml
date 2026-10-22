@@ -57,6 +57,13 @@ jobs:
           RAW_VALUES_FILES: ${{ vars.HELM_VALUES_FILES || 'apps/retail-shop/values-dev.yaml' }}
         run: |
           set -euo pipefail
+
+          # Repository variables can include copied trailing whitespace/newlines.
+          HELM_REPO="$(printf '%s' "$HELM_REPO" | tr -d '[:space:]')"
+          if [[ ! "$HELM_REPO" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
+            echo "::error::HELM_REPO must be an owner/repository value with no whitespace."
+            exit 1
+          fi
           
           # 1. Clean up and resolve the file path out of the comma-separated string
           HELM_VALUES_FILES=$(echo "$RAW_VALUES_FILES" | tr ',' '\n' | head -n 1 | xargs)
@@ -78,7 +85,7 @@ jobs:
             git checkout -b "$BRANCH"
           fi
 
-                    python - <<'PY'
+                    python - << PY
           import os
           import re
           
