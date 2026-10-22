@@ -16,19 +16,8 @@ jobs:
         AWS_REGION: ${{ vars.AWS_REGION }}
         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      - name: Login to Amazon ECR
-        id: ecr
-        uses: aws-actions/amazon-ecr-login@v2
-      - name: Build and push images
-        env:
-          REGISTRY: ${{ steps.ecr.outputs.registry }}
-          SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          for service in storefront catalog cart checkout; do
-            docker build --pull -f "services/${service}/Dockerfile" -t "${REGISTRY}/retail-shop-dev/${service}:${SHA}" .
-            docker push "${REGISTRY}/retail-shop-dev/${service}:${SHA}"
-          done
+      
+        
       - name: Checkout Helm GitOps repository
         uses: actions/checkout@v4
         with:
