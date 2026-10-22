@@ -9,8 +9,7 @@ permissions:
   contents: write
   id-token: write
   packages: write
-  pull-requests: write # 👈 Add this line to allow PR creation
- 
+  pull-requests: write 
 
 jobs:
   build-publish:
@@ -55,14 +54,24 @@ jobs:
           SHA: ${{ github.sha }}
           GH_TOKEN: ${{ secrets.GH_PAT }}
           HELM_REPO: ${{ vars.HELM_REPO }}
-          HELM_VALUES_FILE: ${{ vars.HELM_VALUES_FILE || 'apps/retail-shop/values-dev.yaml' }}
+          # Handles both HELM_VALUES_FILES (comma-separated string) or single HELM_VALUES_FILE variables safely
+          RAW_VALUES_FILES: ${{ vars.HELM_VALUES_FILES || vars.HELM_VALUES_FILE || 'apps/retail-shop/values-dev.yaml' }}
         run: |
           set -euo pipefail
-          cd helm-repo
-          if [[ ! -f "$HELM_VALUES_FILE" ]]; then
-            echo "::error::HELM_VALUES_FILE '$HELM_VALUES_FILE' does not exist in the Helm repository."
+          
+          # 1. Clean up and resolve the file path out of the comma-separated string
+          # Grabs the first item in the list and removes any accidental whitespace
+          HELM_VALUES_FILE=$(echo "$RAW_VALUES_FILES" | tr ',' '\n' | head -n 1 | xargs)
+          export HELM_VALUES_FILE
+          
+          # 2. Check if the file exists inside the checked-out helm subfolder
+          if [[ ! -f "helm-repo/$HELM_VALUES_FILE" ]]; then
+            echo "::error::HELM_VALUES_FILE '$HELM_VALUES_FILE' does not exist inside the helm-repo directory."
             exit 1
           fi
+
+          cd helm-repo
+          
           BRANCH="bot/retail-${GITHUB_SHA::12}"
           if git ls-remote --exit-code --heads origin "refs/heads/$BRANCH" > /dev/null; then
             git fetch origin "$BRANCH"
@@ -74,12 +83,13 @@ jobs:
           python - <<'PY'
           import os
           import re
-
+          
           path = os.environ["HELM_VALUES_FILE"]
           sha = os.environ["SHA"]
+          
           with open(path, encoding="utf-8") as f:
               content = f.read()
-
+              
           for service in ("storefront", "catalog", "cart", "checkout"):
               headers = list(
                   re.finditer(rf"(?m)^  {re.escape(service)}:\s*$", content)
@@ -88,7 +98,6 @@ jobs:
                   raise SystemExit(
                       f"Could not find exactly one values section for {service}"
                   )
-
               start = headers[0].start()
               end = len(content)
               next_header = re.search(
@@ -100,7 +109,6 @@ jobs:
               image = re.search(r"(?ms)^    image:\s*\n(?P<body>.*)", section)
               if not image:
                   raise SystemExit(f"Could not find image configuration for {service}")
-
               image_body, repository_count = re.subn(
                   r"(?m)^      repository:\s*.*$",
                   f"      repository: tanjimuladnan/{service}",
@@ -117,28 +125,33 @@ jobs:
                   raise SystemExit(
                       f"Could not update repository and image tag for {service}"
                   )
-
               section = (
                   section[: image.start("body")]
                   + image_body
               )
               content = content[:start] + section + content[end:]
-
+              
           with open(path, "w", encoding="utf-8") as f:
               f.write(content)
           PY
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          
           git add "$HELM_VALUES_FILE"
+          
           if ! git diff --cached --quiet; then
             git commit -m "chore: update retail shop images to ${SHA}"
             git push origin "$BRANCH"
           fi
+          
           PR_URL="$(gh pr list --repo "$HELM_REPO" --head "${HELM_REPO%%/*}:$BRANCH" --state open --json url --jq '.[0].url // empty')"
           if [[ -z "$PR_URL" ]]; then
-            if ! git ls-remote --exit-code --heads origin "refs/heads/$BRANCH" > /dev/null; then
+            # Check if remote changes actually exist before trying to build a PR
+            if ! git diff --quiet origin/main..HEAD; then
+              gh pr create --repo "$HELM_REPO" --base main --head "$BRANCH" --title "chore: deploy retail shop ${SHA}" --body "Automated Docker Hub image update from retail-shop-app commit ${SHA}. Review and merge to deploy via Argo CD."
+            else
               echo "Image values are already up to date; no pull request is needed."
               exit 0
             fi
-            gh pr create --repo "$HELM_REPO" --base main --head "$BRANCH" --title "chore: deploy retail shop ${SHA}" --body "Automated Docker Hub image update from retail-shop-app commit ${SHA}. Review and merge to deploy via Argo CD."
           fi
