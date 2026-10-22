@@ -1,24 +1,14 @@
-# eks-app
+# retail-shop-app
 
-Sample application repository. Pushes to `main` run tests, build a container, push it to ECR using GitHub OIDC, then create a PR in `eks-helm` to update the image tag.
+Four demo services: `storefront`, `catalog`, `cart`, and `checkout`. Cart/checkout are stateless demo endpoints and do not process payments or persist orders.
 
-## Required GitHub configuration
-
-Repository **Variables**:
+Configure GitHub Actions repository variables:
 - `AWS_REGION` — e.g. `ap-southeast-1`
-- `AWS_ROLE_ARN` — IAM role trusted for this repository's GitHub OIDC subject
-- `ECR_REPOSITORY` — full ECR repository name, e.g. `workshop-dev/workshop-app`
-- `HELM_REPO` — `ORG/eks-helm`
-- `HELM_VALUES_FILE` — `apps/workshop-app/values-dev.yaml`
+- `AWS_ROLE_ARN` — OIDC role ARN trusted for this repository's `main` branch
+- `HELM_REPO` — `ORG/retail-shop-helm`
+- `HELM_VALUES_FILE` — `apps/retail-shop/values-dev.yaml`
 
-Repository **Secrets**:
-- `GH_PAT` — fine-grained token with Contents: read/write and Pull requests: read/write on `eks-helm` only. Prefer a GitHub App token in production.
+Secret:
+- `GH_PAT` — fine-grained token scoped to Contents and Pull Requests on the Helm repository only. Prefer a GitHub App token for production.
 
-The IAM role needs only the required ECR push permissions and a trust policy restricted to this repository and branch. ECR repository is created by Terraform; make sure the name matches `ECR_REPOSITORY`.
-
-## Run locally
-
-```bash
-docker build -t workshop-app:local .
-docker run --rm -p 8080:8080 workshop-app:local
-```
+Terraform creates ECR repos named `retail-shop-dev/storefront`, `retail-shop-dev/catalog`, `retail-shop-dev/cart`, and `retail-shop-dev/checkout`. Restrict the AWS role's ECR permissions and OIDC trust.
