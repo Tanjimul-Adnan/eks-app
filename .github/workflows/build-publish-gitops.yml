@@ -54,19 +54,17 @@ jobs:
           SHA: ${{ github.sha }}
           GH_TOKEN: ${{ secrets.GH_PAT }}
           HELM_REPO: ${{ vars.HELM_REPO }}
-          # Handles both HELM_VALUES_FILES (comma-separated string) or single HELM_VALUES_FILE variables safely
-          RAW_VALUES_FILES: ${{ vars.HELM_VALUES_FILES || vars.HELM_VALUES_FILE || 'apps/retail-shop/values-dev.yaml' }}
+          RAW_VALUES_FILES: ${{ vars.HELM_VALUES_FILES || 'apps/retail-shop/values-dev.yaml' }}
         run: |
           set -euo pipefail
           
           # 1. Clean up and resolve the file path out of the comma-separated string
-          # Grabs the first item in the list and removes any accidental whitespace
-          HELM_VALUES_FILE=$(echo "$RAW_VALUES_FILES" | tr ',' '\n' | head -n 1 | xargs)
-          export HELM_VALUES_FILE
+          HELM_VALUES_FILES=$(echo "$RAW_VALUES_FILES" | tr ',' '\n' | head -n 1 | xargs)
+          export HELM_VALUES_FILES
           
           # 2. Check if the file exists inside the checked-out helm subfolder
-          if [[ ! -f "helm-repo/$HELM_VALUES_FILE" ]]; then
-            echo "::error::HELM_VALUES_FILE '$HELM_VALUES_FILE' does not exist inside the helm-repo directory."
+          if [[ ! -f "helm-repo/$HELM_VALUES_FILES" ]]; then
+            echo "::error::HELM_VALUES_FILES '$HELM_VALUES_FILES' does not exist inside the helm-repo directory."
             exit 1
           fi
 
@@ -84,7 +82,8 @@ jobs:
           import os
           import re
           
-          path = os.environ["HELM_VALUES_FILE"]
+          # Unified variable to match the shell exported value name
+          path = os.environ["HELM_VALUES_FILES"]
           sha = os.environ["SHA"]
           
           with open(path, encoding="utf-8") as f:
@@ -98,6 +97,8 @@ jobs:
                   raise SystemExit(
                       f"Could not find exactly one values section for {service}"
                   )
+              
+              # Fixed: Fetch from list index position [0]
               start = headers[0].start()
               end = len(content)
               next_header = re.search(
@@ -138,7 +139,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           
-          git add "$HELM_VALUES_FILE"
+          git add "$HELM_VALUES_FILES"
           
           if ! git diff --cached --quiet; then
             git commit -m "chore: update retail shop images to ${SHA}"
@@ -147,7 +148,7 @@ jobs:
           
           PR_URL="$(gh pr list --repo "$HELM_REPO" --head "${HELM_REPO%%/*}:$BRANCH" --state open --json url --jq '.[0].url // empty')"
           if [[ -z "$PR_URL" ]]; then
-            # Check if remote changes actually exist before trying to build a PR
+            # Verify remote changes exist between branches before running gh pr create
             if ! git diff --quiet origin/main..HEAD; then
               gh pr create --repo "$HELM_REPO" --base main --head "$BRANCH" --title "chore: deploy retail shop ${SHA}" --body "Automated Docker Hub image update from retail-shop-app commit ${SHA}. Review and merge to deploy via Argo CD."
             else
