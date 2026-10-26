@@ -192,6 +192,7 @@ jobs:
           repo_owner="${HELM_REPO%%/*}"
 
           if ! existing_pr=$(gh api "repos/${HELM_REPO}/pulls" \
+            --method GET \
             -f state=open \
             -f head="${repo_owner}:${branch}" \
             -f base=main \
