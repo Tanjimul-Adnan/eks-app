@@ -1,156 +1,195 @@
-name: build-publish-gitops
+name: Build, Publish, and Update GitOps
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
-  contents: write
-  id-token: write
-  packages: write
-  pull-requests: write 
+  contents: read
 
 jobs:
-  build-publish:
+  build-and-push:
+    name: Build and push ${{ matrix.image }}
     runs-on: ubuntu-latest
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
-        service: [storefront, catalog, cart, checkout, orders, api_service]
+        include:
+          - image: storefront
+            context: services/ui
+          - image: catalog
+            context: services/catalog
+          - image: cart
+            context: services/cart
+          - image: checkout
+            context: services/checkout
+          - image: orders
+            context: services/orders
     steps:
-      - name: Checkout repository
+      - name: Check out source
         uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
-          username: tanjimuladnan
+          username: ${{ vars.DOCKERHUB_USERNAME || 'tanjimuladnan' }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and push ${{ matrix.service }} image
-        uses: docker/build-push-action@v5
+      - name: Build and push image
+        uses: docker/build-push-action@v6
         with:
-          context: .
-          file: ${{ matrix.service == 'api_service' && 'services/orders/Dockerfile' || format('services/{0}/Dockerfile', matrix.service) }}
+          context: ${{ matrix.context }}
+          file: ${{ matrix.context }}/Dockerfile
           push: true
           tags: |
-            docker.io/tanjimuladnan/${{ matrix.service }}:latest
-            docker.io/tanjimuladnan/${{ matrix.service }}:${{ github.sha }}
+            ${{ vars.DOCKERHUB_USERNAME || 'tanjimuladnan' }}/${{ matrix.image }}:${{ github.sha }}
+            ${{ vars.DOCKERHUB_USERNAME || 'tanjimuladnan' }}/${{ matrix.image }}:latest
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
 
   update-gitops:
-    needs: build-publish
+    name: Update Helm chart and open deployment PR
     runs-on: ubuntu-latest
+    needs: build-and-push
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME || 'tanjimuladnan' }}
+      HELM_REPO: ${{ vars.HELM_REPO || 'Tanjimul-Adnan/eks-helm' }}
+      GH_TOKEN: ${{ secrets.GH_PAT }}
     steps:
-      - name: Checkout Helm GitOps repository
+      - name: Check out application source
+        uses: actions/checkout@v4
+
+      - name: Check out Helm GitOps repository
         uses: actions/checkout@v4
         with:
-          repository: ${{ vars.HELM_REPO }}
+          repository: ${{ vars.HELM_REPO || 'Tanjimul-Adnan/eks-helm' }}
           token: ${{ secrets.GH_PAT }}
+          ref: main
           path: helm-repo
 
-      - name: Update image tags and create PR
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.17.3
+
+      - name: Package application chart and update GitOps values
+        shell: bash
         env:
-          SHA: ${{ github.sha }}
-          GH_TOKEN: ${{ secrets.GH_PAT }}
-          HELM_REPO: ${{ vars.HELM_REPO }}
-          RAW_VALUES_FILES: ${{ vars.HELM_VALUES_FILES || 'apps/retail-shop/values-dev.yaml' }}
+          IMAGE_TAG: ${{ github.sha }}
         run: |
           set -euo pipefail
 
-          # Repository variables can include copied trailing whitespace/newlines.
-          HELM_REPO="$(printf '%s' "$HELM_REPO" | tr -d '[:space:]')"
-          if [[ ! "$HELM_REPO" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
-            echo "::error::HELM_REPO must be an owner/repository value with no whitespace."
-            exit 1
-          fi
-          
-          # 1. Clean up and resolve the file path out of the comma-separated string
-          HELM_VALUES_FILES=$(echo "$RAW_VALUES_FILES" | tr ',' '\n' | head -n 1 | xargs)
-          export HELM_VALUES_FILES
-          
-          # 2. Check if the file exists inside the checked-out helm subfolder
-          if [[ ! -f "helm-repo/$HELM_VALUES_FILES" ]]; then
-            echo "::error::HELM_VALUES_FILES '$HELM_VALUES_FILES' does not exist inside the helm-repo directory."
+          if [[ -z "${DOCKERHUB_USERNAME}" || -z "${GH_TOKEN}" ]]; then
+            echo "::error::Set the DOCKERHUB_USERNAME variable and GH_PAT secret."
             exit 1
           fi
 
-          cd helm-repo
-          
-          BRANCH="bot/retail-${GITHUB_SHA::12}"
-          if git ls-remote --exit-code --heads origin "refs/heads/$BRANCH" > /dev/null; then
-            git fetch origin "$BRANCH"
-            git checkout -B "$BRANCH" FETCH_HEAD
-          else
-            git checkout -b "$BRANCH"
+          chart_dir="helm-repo/apps/retail-shop"
+          if [[ ! -d "helm-repo/apps/retail-shop" ]]; then
+            echo "::error::The Argo CD chart path apps/retail-shop does not exist in ${HELM_REPO}."
+            exit 1
           fi
 
-                    python - << PY
-          import os
-          import re
-          
-          path = os.environ["HELM_VALUES_FILES"]
-          sha = os.environ["SHA"]
-          
-          with open(path, encoding="utf-8") as f:
-              lines = f.readlines()
-              
-          services = ["storefront", "catalog", "cart", "checkout", "orders", "api_service"]
-          current_service = None
-          in_image_block = False
-          
-          updated_lines = []
-          
-          for line in lines:
-              # 1. Track the active service target block context
-              match_service = re.match(r"^ {2}(\w+):\s*$", line)
-              if match_service:
-                  service_name = match_service.group(1)
-                  if service_name in services:
-                      current_service = service_name
-                      in_image_block = False
-                  else:
-                      current_service = None
-              elif re.match(r"^ {0,1}\S", line) or re.match(r"^ {2}\w+:\s*$", line):
-                  if not match_service:
-                      current_service = None
-                  
-              if current_service:
-                  # 2. Track when we are inside the image subsection
-                  if re.match(r"^ {4}image:\s*$", line):
-                      in_image_block = True
-                  elif in_image_block and not line.startswith("    "):
-                      in_image_block = False
-                      
-                  # 3. Only update the tag key directly
-                  if in_image_block and "tag:" in line:
-                      indent = len(line) - len(line.lstrip())
-                      line = f"{' ' * indent}tag: \"{sha}\"\n"
-                          
-              updated_lines.append(line)
-              
-          with open(path, "w", encoding="utf-8") as f:
-              f.writelines(updated_lines)
+          helm dependency build services/app/chart
+
+          rm -rf "${chart_dir}/templates" "${chart_dir}/charts" "${chart_dir}/charts-src"
+          cp -a services/app/chart/. "${chart_dir}/"
+          rm -rf "${chart_dir}/charts"
+
+          mkdir -p "${chart_dir}/charts-src"
+          for service in cart catalog checkout orders ui; do
+            cp -a "services/${service}/chart" "${chart_dir}/charts-src/${service}"
+          done
+
+          python3 - "${chart_dir}" "${DOCKERHUB_USERNAME}" "${IMAGE_TAG}" <<'PY'
+          from pathlib import Path
+          import sys
+
+          chart_dir = Path(sys.argv[1])
+          username = sys.argv[2]
+          image_tag = sys.argv[3]
+
+          chart_file = chart_dir / "Chart.yaml"
+          chart = chart_file.read_text()
+          repositories = {
+              "file://../../cart/chart": "file://charts-src/cart",
+              "file://../../catalog/chart": "file://charts-src/catalog",
+              "file://../../checkout/chart": "file://charts-src/checkout",
+              "file://../../orders/chart": "file://charts-src/orders",
+              "file://../../ui/chart": "file://charts-src/ui",
+          }
+          for old, new in repositories.items():
+              if old not in chart:
+                  raise SystemExit(f"Expected chart dependency path not found: {old}")
+              chart = chart.replace(old, new)
+          chart_file.write_text(chart)
+
+          images = {
+              "ui": "storefront",
+              "catalog": "catalog",
+              "cart": "cart",
+              "checkout": "checkout",
+              "orders": "orders",
+          }
+          lines = ["# Generated by the application build workflow."]
+          for service, image in images.items():
+              lines.extend(
+                  [
+                      f"{service}:",
+                      "  image:",
+                      f"    repository: {username}/{image}",
+                      f"    tag: {image_tag}",
+                  ]
+              )
+          (chart_dir / "values-dev.yaml").write_text("\n".join(lines) + "\n")
           PY
 
+          helm dependency update "${chart_dir}"
+          helm lint "${chart_dir}" --values "${chart_dir}/values-dev.yaml"
+          helm template retail-shop "${chart_dir}" \
+            --namespace retail-shop \
+            --values "${chart_dir}/values-dev.yaml" \
+            > "${RUNNER_TEMP}/retail-shop-rendered.yaml"
+          test -s "${RUNNER_TEMP}/retail-shop-rendered.yaml"
 
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          
-          git add "$HELM_VALUES_FILES"
-          
-          if ! git diff --cached --quiet; then
-            git commit -m "chore: update retail shop images to ${SHA}"
-            git push origin "$BRANCH"
+      - name: Create GitOps pull request
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch="automation/retail-shop-${GITHUB_SHA:0:12}"
+
+          git -C helm-repo config user.name "github-actions[bot]"
+          git -C helm-repo config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git -C helm-repo ls-remote --exit-code --heads origin "${branch}" >/dev/null 2>&1; then
+            git -C helm-repo fetch origin "${branch}"
+            git -C helm-repo checkout -B "${branch}" FETCH_HEAD
+          else
+            git -C helm-repo checkout -b "${branch}"
           fi
-          
-          PR_URL="$(gh pr list --repo "$HELM_REPO" --head "${HELM_REPO%%/*}:$BRANCH" --state open --json url --jq '.[0].url // empty')"
-          if [[ -z "$PR_URL" ]]; then
-            # Verify remote changes exist between branches before running gh pr create
-            if ! git diff --quiet origin/main..HEAD; then
-              gh pr create --repo "$HELM_REPO" --base main --head "$BRANCH" --title "chore: deploy retail shop ${SHA}" --body "Automated Docker Hub image update from retail-shop-app commit ${SHA}. Review and merge to deploy via Argo CD."
-            else
-              echo "Image values are already up to date; no pull request is needed."
-              exit 0
-            fi
+          git -C helm-repo add apps/retail-shop
+
+          if git -C helm-repo diff --cached --quiet; then
+            echo "The GitOps chart already matches this image build."
+            exit 0
+          fi
+
+          git -C helm-repo commit -m "Deploy retail shop ${GITHUB_SHA:0:12}"
+          git -C helm-repo push origin "${branch}"
+          if gh pr view "${branch}" --repo "${HELM_REPO}" --json number >/dev/null 2>&1; then
+            echo "Updated the existing GitOps pull request for ${branch}."
+          else
+            gh pr create \
+              --repo "${HELM_REPO}" \
+              --base main \
+              --head "${branch}" \
+              --title "Deploy retail shop ${GITHUB_SHA:0:12}" \
+              --body "Updates the retail-shop Helm chart to the images built from ${GITHUB_SHA}. Merge this PR to let Argo CD deploy the release."
           fi

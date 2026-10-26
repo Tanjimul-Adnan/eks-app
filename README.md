@@ -1,22 +1,37 @@
-# retail-shop-app
+# Retail Store Sample
 
-Four demo services: `storefront`, `catalog`, `cart`, and `checkout`. Cart/checkout are stateless demo endpoints and do not process payments or persist orders.
+This repository contains the storefront UI and its catalog, cart, checkout, and orders services.
 
-## Run locally with Docker Desktop
+## Run the application with Docker Desktop
 
-The Compose setup pulls the service images published by the GitHub Actions workflow and starts the local database, cache, and queue dependencies. It builds catalog locally with a connection cleanup fix because the currently published catalog image cannot pass its MySQL readiness check:
+From the repository root, build and start the complete application and its local dependencies:
 
 ```powershell
-docker compose up -d
+docker compose up -d --build
 docker compose ps
 ```
 
-Open the storefront at http://localhost:8080. The service endpoints are available at catalog `:8081`, cart `:8082`, checkout `:8083`, orders `:8084`, and api-service `:8085`. Stop the stack with `docker compose down`; the MySQL and PostgreSQL data volumes are retained.
+Open the storefront at [http://localhost:8080](http://localhost:8080). The UI uses the local backend services for product browsing, cart updates, and demo checkout. This application is for demonstration only; do not enter real payment or personal information.
 
-Configure GitHub Actions repository variables:
-- `HELM_REPO` — `ORG/retail-shop-helm`
-- `HELM_VALUES_FILE` — `apps/retail-shop/values-dev.yaml` (optional; defaults to this path if unset)
+Stop the application with:
 
-Configure these GitHub Actions secrets:
-- `DOCKERHUB_TOKEN` — Docker Hub access token with permission to push images to `tanjimuladnan`
-- `GH_PAT` — fine-grained token scoped to Contents and Pull Requests on the Helm repository only. Prefer a GitHub App token for production.
+```powershell
+docker compose down
+```
+
+The catalog and orders services use development-only credentials defined in their Compose files. Do not expose this local demo stack publicly or use real payment or personal information.
+
+## Build and deploy to EKS
+
+The [Build, Publish, and Update GitOps workflow](.github/workflows/build-publish-gitops.yml) builds the UI, catalog, cart, checkout, and orders images on pushes to `main` (or when manually dispatched). It pushes each image to Docker Hub with both a commit-SHA tag and `latest`, then packages the application Helm chart and opens a pull request against `Tanjimul-Adnan/eks-helm` at `apps/retail-shop`.
+
+Configure these repository secrets and variables before running the workflow:
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `DOCKERHUB_TOKEN` | Secret | Docker Hub access token with permission to push the five image repositories. |
+| `GH_PAT` | Secret | GitHub token with contents-write and pull-request-write access to the Helm GitOps repository. |
+| `DOCKERHUB_USERNAME` | Variable (optional) | Docker Hub namespace; defaults to `tanjimuladnan`. |
+| `HELM_REPO` | Variable (optional) | GitOps repository in `owner/repo` form; defaults to `Tanjimul-Adnan/eks-helm`. |
+
+The workflow validates the packaged chart before opening the pull request. Argo CD deploys the update after that pull request is merged; the workflow does not deploy directly to the EKS cluster.
