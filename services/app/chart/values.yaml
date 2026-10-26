@@ -3,16 +3,46 @@ cart:
 
 catalog:
   fullnameOverride: catalog
+  app:
+    persistence:
+      provider: mysql
+  mysql:
+    create: true
+    persistentVolume:
+      enabled: true
 
 checkout:
   fullnameOverride: checkout
-  retail:
-    checkout:
-      endpoints:
-        orders: http://orders:80
+  app:
+    persistence:
+      provider: redis
+    endpoints:
+      orders: http://orders:80
+  redis:
+    create: true
 
 orders:
   fullnameOverride: orders
+  app:
+    persistence:
+      provider: postgres
+      secret:
+        create: true
+        name: orders-db-credentials
+    messaging:
+      provider: rabbitmq
+      rabbitmq:
+        secret:
+          create: true
+          name: orders-rabbitmq-credentials
+  postgresql:
+    create: true
+    persistentVolume:
+      enabled: true
+  rabbitmq:
+    create: true
+    persistentVolume:
+      enabled: true
 
 ui:
   fullnameOverride: ui

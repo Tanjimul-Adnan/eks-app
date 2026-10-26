@@ -132,6 +132,14 @@ app.kubernetes.io/owner: retail-store-sample
 {{- end -}}
 {{- end -}}
 
+{{- define "orders.rabbitmq.password" -}}
+{{- if not (empty .Values.app.messaging.rabbitmq.secret.password) -}}
+    {{- .Values.app.messaging.rabbitmq.secret.password | b64enc -}}
+{{- else -}}
+    {{- include "getOrGeneratePass" (dict "Namespace" .Release.Namespace "Kind" "Secret" "Name" .Values.app.messaging.rabbitmq.secret.name "Key" "RETAIL_ORDERS_MESSAGING_RABBITMQ_PASSWORD") -}}
+{{- end -}}
+{{- end -}}
+
 {{- define "orders.postgresql.endpoint" -}}
 {{- if .Values.postgresql.create -}}
 {{ include "orders.postgresql.fullname" . }}:{{ .Values.postgresql.service.port }}

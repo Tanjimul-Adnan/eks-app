@@ -35,3 +35,5 @@ Configure these repository secrets and variables before running the workflow:
 | `HELM_REPO` | Variable (optional) | GitOps repository in `owner/repo` form; defaults to `Tanjimul-Adnan/eks-helm`. |
 
 The workflow validates the packaged chart before opening the pull request. Argo CD deploys the update after that pull request is merged; the workflow does not deploy directly to the EKS cluster.
+
+The retail-shop chart enables MySQL for catalog, PostgreSQL and RabbitMQ for orders, and Redis for checkout. MySQL, PostgreSQL, and RabbitMQ use persistent volume claims; the EKS cluster must have a default StorageClass (or the chart values must specify one) for those claims to bind. Database and RabbitMQ credentials are managed by their service charts.

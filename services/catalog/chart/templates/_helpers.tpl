@@ -132,6 +132,10 @@ app.kubernetes.io/owner: retail-store-sample
 {{- end -}}
 {{- end -}}
 
+{{- define "catalog.mysql.rootPassword" -}}
+{{- include "getOrGeneratePass" (dict "Namespace" .Release.Namespace "Kind" "Secret" "Name" .Values.app.persistence.secret.name "Key" "MYSQL_ROOT_PASSWORD") -}}
+{{- end -}}
+
 {{- define "catalog.mysql.endpoint" -}}
 {{- if .Values.mysql.create -}}
 {{ include "catalog.mysql.fullname" . }}:{{ .Values.mysql.service.port }}

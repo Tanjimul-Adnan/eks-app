@@ -30,7 +30,10 @@ spec:
           imagePullPolicy: {{ .Values.mysql.image.pullPolicy }}
           env:
             - name: MYSQL_ROOT_PASSWORD
-              value: my-secret-pw
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.app.persistence.secret.name }}
+                  key: MYSQL_ROOT_PASSWORD
             - name: MYSQL_DATABASE
               value: {{ .Values.app.persistence.database }}
             - name: MYSQL_USER
