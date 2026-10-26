@@ -30,10 +30,12 @@ Configure these repository secrets and variables before running the workflow:
 | Name | Type | Description |
 | --- | --- | --- |
 | `DOCKERHUB_TOKEN` | Secret | Docker Hub access token with permission to push the five image repositories. |
-| `GH_PAT` | Secret | GitHub token with contents-write and pull-request-write access to the Helm GitOps repository. |
+| `GH_PAT` | Secret | GitHub token that includes `Tanjimul-Adnan/eks-helm` and has Contents read/write and Pull requests read/write permissions. |
 | `DOCKERHUB_USERNAME` | Variable (optional) | Docker Hub namespace; defaults to `tanjimuladnan`. |
 | `HELM_REPO` | Variable (optional) | GitOps repository in `owner/repo` form; defaults to `Tanjimul-Adnan/eks-helm`. |
 
 The workflow validates the packaged chart before opening the pull request. Argo CD deploys the update after that pull request is merged; the workflow does not deploy directly to the EKS cluster.
+
+If the workflow pushes its automation branch but cannot create the pull request, update `GH_PAT` so its repository selection and permissions include the Helm GitOps repository. The workflow reports the GitHub API error if it still cannot list or create pull requests.
 
 The retail-shop chart enables MySQL for catalog, PostgreSQL and RabbitMQ for orders, and Redis for checkout. MySQL, PostgreSQL, and RabbitMQ use persistent volume claims; the EKS cluster must have a default StorageClass (or the chart values must specify one) for those claims to bind. Database and RabbitMQ credentials are managed by their service charts.

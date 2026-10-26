@@ -183,13 +183,32 @@ jobs:
 
           git -C helm-repo commit -m "Deploy retail shop ${GITHUB_SHA:0:12}"
           git -C helm-repo push origin "${branch}"
-          if gh pr view "${branch}" --repo "${HELM_REPO}" --json number >/dev/null 2>&1; then
-            echo "Updated the existing GitOps pull request for ${branch}."
+          repo_owner="${HELM_REPO%%/*}"
+
+          if ! existing_pr=$(gh api "repos/${HELM_REPO}/pulls" \
+            -f state=open \
+            -f head="${repo_owner}:${branch}" \
+            -f base=main \
+            --jq '.[0].html_url // ""' 2>&1); then
+            echo "::error::The branch was pushed, but GitHub could not list pull requests in ${HELM_REPO}."
+            echo "::error::Grant GH_PAT access to ${HELM_REPO} with Contents read/write and Pull requests read/write permissions."
+            echo "::error::GitHub API response: ${existing_pr}"
+            exit 1
+          fi
+
+          if [[ -n "${existing_pr}" ]]; then
+            echo "Updated the existing GitOps pull request: ${existing_pr}"
+          elif ! pull_request_url=$(gh api "repos/${HELM_REPO}/pulls" \
+            --method POST \
+            -f title="Deploy retail shop ${GITHUB_SHA:0:12}" \
+            -f head="${repo_owner}:${branch}" \
+            -f base=main \
+            -f body="Updates the retail-shop Helm chart to the images built from ${GITHUB_SHA}. Merge this PR to let Argo CD deploy the release." \
+            --jq '.html_url' 2>&1); then
+            echo "::error::The branch was pushed, but GitHub could not create a pull request in ${HELM_REPO}."
+            echo "::error::Grant GH_PAT access to ${HELM_REPO} with Contents read/write and Pull requests read/write permissions."
+            echo "::error::GitHub API response: ${pull_request_url}"
+            exit 1
           else
-            gh pr create \
-              --repo "${HELM_REPO}" \
-              --base main \
-              --head "${branch}" \
-              --title "Deploy retail shop ${GITHUB_SHA:0:12}" \
-              --body "Updates the retail-shop Helm chart to the images built from ${GITHUB_SHA}. Merge this PR to let Argo CD deploy the release."
+            echo "Created GitOps pull request: ${pull_request_url}"
           fi
