@@ -58,6 +58,15 @@ class ApiServiceTests(unittest.TestCase):
                         [{"product_id": "sku-100", "quantity": quantity}]
                     )
 
+    def test_mysql_connection_closes_once(self):
+        connection = MagicMock()
+        connection.__enter__.return_value = connection
+        connection.__exit__.side_effect = lambda *_: connection.close()
+        with patch.object(api_service.pymysql, "connect", return_value=connection):
+            with api_service.mysql_connection() as yielded_connection:
+                self.assertIs(yielded_connection, connection)
+        connection.close.assert_called_once()
+
     def test_order_publish_uses_broker_confirmation(self):
         connection = Mock()
         channel = Mock()

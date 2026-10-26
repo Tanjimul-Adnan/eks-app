@@ -36,8 +36,7 @@ def mysql_connection():
         connect_timeout=3,
     )
     try:
-        with connection:
-            yield connection
+        yield connection
     finally:
         connection.close()
 
