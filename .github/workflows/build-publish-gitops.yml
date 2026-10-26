@@ -164,6 +164,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          HELM_REPO="$(printf '%s' "${HELM_REPO}" | tr -d '\r\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+          if [[ ! "${HELM_REPO}" =~ ^[^/[:space:]]+/[^/[:space:]]+$ ]]; then
+            echo "::error::HELM_REPO must be a repository in owner/repo form; received an invalid value."
+            exit 1
+          fi
+
           branch="automation/retail-shop-${GITHUB_SHA:0:12}"
 
           git -C helm-repo config user.name "github-actions[bot]"
