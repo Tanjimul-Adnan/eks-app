@@ -17,7 +17,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        service: [storefront, catalog, cart, checkout]
+        service: [storefront, catalog, cart, checkout, orders, api_service]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -32,7 +32,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: services/${{ matrix.service }}/Dockerfile
+          file: ${{ matrix.service == 'api_service' && 'services/orders/Dockerfile' || format('services/{0}/Dockerfile', matrix.service) }}
           push: true
           tags: |
             docker.io/tanjimuladnan/${{ matrix.service }}:latest
@@ -95,7 +95,7 @@ jobs:
           with open(path, encoding="utf-8") as f:
               lines = f.readlines()
               
-          services = ["storefront", "catalog", "cart", "checkout"]
+          services = ["storefront", "catalog", "cart", "checkout", "orders", "api_service"]
           current_service = None
           in_image_block = False
           
