@@ -25,8 +25,8 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
           args: >
-            -Dsonar.organization=your-sonar-org-key
-            -Dsonar.projectKey=your-sonar-project-key
+            -Dsonar.organization=tanjimul-adnan
+            -Dsonar.projectKey=eks-workshop
             -Dsonar.sources=services/
             -Dsonar.exclusions=**/chart/**,**/templates/**
 
@@ -205,7 +205,7 @@ jobs:
           branch="automation/retail-shop-${GITHUB_SHA:0:12}"
 
           git -C helm-repo config user.name "github-actions[bot]"
-          git -C helm-repo config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C helm-repo config user.email "41898282+github-actions[bot]@://github.com"
           git -C helm-repo add apps/retail-shop
 
           if git -C helm-repo diff --cached --quiet; then
@@ -230,13 +230,13 @@ jobs:
           fi
 
           if [[ -n "${existing_pr}" ]]; then
-            echo "Updated the existing GitOps pull request: ${existing_pr}"
-          else
-            echo "Creating a new pull request..."
-            gh api "repos/${HELM_REPO}/pulls" \
-              --method POST \
-              -f title="Deploy retail shop ${GITHUB_SHA:0:12}" \
-              -f head="${branch}" \
-              -f base=main \
-              -f body="Automated deployment update for retail shop services targeting commit ${GITHUB_SHA}."
+            echo "A pull request for this deployment already exists: ${existing_pr}"
+            exit 0
           fi
+
+          gh pr create \
+            --repo "${HELM_REPO}" \
+            --title "Deploy retail shop ${GITHUB_SHA:0:12}" \
+            --body "Automated deployment update from application repository commit ${GITHUB_SHA}." \
+            --head "${branch}" \
+            --base main
