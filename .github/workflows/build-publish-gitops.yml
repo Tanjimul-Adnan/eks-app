@@ -25,7 +25,7 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
           args: >
-            -Dsonar.organization=tanjimul-adnan
+            -Dsonar.organization=eks-workshop
             -Dsonar.projectKey=eks-workshop
             -Dsonar.sources=services/
             -Dsonar.exclusions=**/chart/**,**/templates/**
