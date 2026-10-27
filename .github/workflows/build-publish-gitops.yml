@@ -10,6 +10,26 @@ permissions:
   contents: read
 
 jobs:
+  sonarcloud:
+    name: SonarQube Cloud Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Shallow clones disabled for accurate blame info
+
+      - name: SonarQube Cloud Scan
+        uses: SonarSource/sonarcloud-github-action@v3
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >
+            -Dsonar.organization=your-sonar-org-key
+            -Dsonar.projectKey=your-sonar-project-key
+            -Dsonar.sources=services/
+            -Dsonar.exclusions=**/chart/**,**/templates/**
+
   build-and-push:
     name: Build and push ${{ matrix.image }}
     runs-on: ubuntu-latest
@@ -74,6 +94,18 @@ jobs:
           token: ${{ secrets.GH_PAT }}
           ref: main
           path: helm-repo
+
+      - name: Check out automation branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch="automation/retail-shop-${GITHUB_SHA:0:12}"
+          if git -C helm-repo ls-remote --exit-code --heads origin "${branch}" >/dev/null 2>&1; then
+            git -C helm-repo fetch origin "${branch}"
+            git -C helm-repo checkout -B "${branch}" FETCH_HEAD
+          else
+            git -C helm-repo checkout -b "${branch}"
+          fi
 
       - name: Set up Helm
         uses: azure/setup-helm@v4
@@ -169,26 +201,22 @@ jobs:
             echo "::error::HELM_REPO must be a repository in owner/repo form; received an invalid value."
             exit 1
           fi
+
           branch="automation/retail-shop-${GITHUB_SHA:0:12}"
+
           git -C helm-repo config user.name "github-actions[bot]"
           git -C helm-repo config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          
-          # Added the -f flag to both checkout commands below to force switch branches
-          if git -C helm-repo ls-remote --exit-code --heads origin "${branch}" >/dev/null 2>&1; then
-            git -C helm-repo fetch origin "${branch}"
-            git -C helm-repo checkout -f -B "${branch}" FETCH_HEAD
-          else
-            git -C helm-repo checkout -f -b "${branch}"
-          fi
-          
           git -C helm-repo add apps/retail-shop
+
           if git -C helm-repo diff --cached --quiet; then
             echo "The GitOps chart already matches this image build."
             exit 0
           fi
+
           git -C helm-repo commit -m "Deploy retail shop ${GITHUB_SHA:0:12}"
           git -C helm-repo push origin "${branch}"
           repo_owner="${HELM_REPO%%/*}"
+
           if ! existing_pr=$(gh api "repos/${HELM_REPO}/pulls" \
             --method GET \
             -f state=open \
@@ -200,17 +228,15 @@ jobs:
             echo "::error::GitHub API response: ${existing_pr}"
             exit 1
           fi
+
           if [[ -n "${existing_pr}" ]]; then
             echo "Updated the existing GitOps pull request: ${existing_pr}"
-          elif ! pull_request_url=$(gh api "repos/${HELM_REPO}/pulls" \
-            --method POST \
-            -f title="Deploy retail shop ${GITHUB_SHA:0:12}" \
-            -f head="${repo_owner}:${branch}" \
-            -f base=main \
-            -f body="Updates the retail-shop Helm chart to the images built from ${GITHUB_SHA}. Merge this PR to let Argo CD deploy the release." \
-            --jq '.html_url' 2>&1); then
-            echo "::error::The branch was pushed, but GitHub could not create a pull request in ${HELM_REPO}."
-            echo "::error::Grant GH_PAT access to ${HELM_REPO} with Contents read/write and Pull requests read/write permissions."
-            echo "::error::GitHub API response: ${pull_request_url}"
-            exit 1
+          else
+            echo "Creating a new pull request..."
+            gh api "repos/${HELM_REPO}/pulls" \
+              --method POST \
+              -f title="Deploy retail shop ${GITHUB_SHA:0:12}" \
+              -f head="${branch}" \
+              -f base=main \
+              -f body="Automated deployment update for retail shop services targeting commit ${GITHUB_SHA}."
           fi
