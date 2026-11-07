@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - main
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -177,8 +180,9 @@ jobs:
                   [
                       f"{service}:",
                       "  image:",
-                      f"    repository: {username}/{image}",
+                      f"    repository: docker.io/{username}/{image}",
                       f"    tag: {image_tag}",
+                      "    pullPolicy: IfNotPresent",
                   ]
               )
           (chart_dir / "values-dev.yaml").write_text("\n".join(lines) + "\n")
