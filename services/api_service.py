@@ -63,7 +63,7 @@ def postgres_connection():
 def dynamodb_table():
     dynamodb = boto3.resource(
         "dynamodb",
-        region_name=os.getenv("AWS_REGION", "us-east-1"),
+        region_name=os.getenv("AWS_REGION", "us-east-2"),
         endpoint_url=os.getenv("DYNAMODB_ENDPOINT", "http://dynamodb:8000"),
         aws_access_key_id="local",
         aws_secret_access_key="local",
