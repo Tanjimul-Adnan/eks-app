@@ -119,6 +119,7 @@ jobs:
           helm repo add ingress-nginx https://github.io
           helm repo update
 
+
       - name: Package application chart and update GitOps values
         shell: bash
         env:
