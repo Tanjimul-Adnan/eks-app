@@ -14,11 +14,8 @@ dependencies:
 - name: retail-store-sample-ui-chart
   repository: file://../../ui/chart
   version: 1.6.3
-- name: ingress-nginx
-  repository: https://kubernetes.github.io/ingress-nginx
-  version: 4.10.0
 - name: cert-manager
   repository: https://charts.jetstack.io
   version: v1.16.2
-digest: sha256:f3217139d029a60e459f92641c7cc984257fbb7f0cc8176147486d83b2e0fdbc
-generated: "2026-11-09T00:46:48.220288+06:00"
+digest: sha256:4b0b15c668ecba68b2ed52008cda98814aff8e28f15b859f570d775eb9f5d57a
+generated: "2026-11-09T01:42:04.8517064+06:00"
