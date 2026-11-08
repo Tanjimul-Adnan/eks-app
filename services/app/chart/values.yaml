@@ -46,9 +46,27 @@ orders:
 
 ui:
   fullnameOverride: ui
+  host: retail-store.example.com
   app:
     endpoints:
       catalog: http://catalog:80
       carts: http://carts:80
       checkout: http://checkout:80
       orders: http://orders:80
+
+ingress:
+  enabled: false
+  tls:
+    enabled: false
+    clusterIssuer: letsencrypt-prod
+    acmeServer: https://acme-v02.api.letsencrypt.org/directory
+    email: ""
+    storefrontSecretName: retail-store-tls
+    argocdSecretName: argocd-server-tls
+
+cert-manager:
+  installCRDs: true
+
+argocd:
+  enabled: false
+  host: argocd.example.com
