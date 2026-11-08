@@ -20,7 +20,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Shallow clones disabled for accurate blame info
+          fetch-depth: 0
 
       - name: SonarQube Cloud Scan
         uses: SonarSource/sonarcloud-github-action@v3
@@ -115,6 +115,13 @@ jobs:
         with:
           version: v3.17.3
 
+      - name: Add Upstream Helm Repositories
+        shell: bash
+        run: |
+          set -euo pipefail
+          helm repo add ingress-nginx https://github.io
+          helm repo update
+
       - name: Package application chart and update GitOps values
         shell: bash
         env:
@@ -185,6 +192,26 @@ jobs:
                       "    pullPolicy: IfNotPresent",
                   ]
               )
+
+          # Align values mapping structure for .yaml.gotmpl overlays
+          lines.extend(
+              [
+                  "ingress:",
+                  "  enabled: true",
+                  "  host: retail-store.xcheetah1.dpdns.org",
+                  "argocd:",
+                  "  host: argocd.xcheetah1.dpdns.org",
+                  "ui:",
+                  "  enabled: true",
+                  "  host: retail-store.xcheetah1.dpdns.org",
+                  "ingress-nginx:",
+                  "  controller:",
+                  "    replicaCount: 2",
+                  "    service:",
+                  "      type: LoadBalancer",
+              ]
+          )
+
           (chart_dir / "values-dev.yaml").write_text("\n".join(lines) + "\n")
           PY
 
@@ -209,7 +236,7 @@ jobs:
           branch="automation/retail-shop-${GITHUB_SHA:0:12}"
 
           git -C helm-repo config user.name "github-actions[bot]"
-          git -C helm-repo config user.email "41898282+github-actions[bot]@://github.com"
+          git -C helm-repo config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git -C helm-repo add apps/retail-shop
 
           if git -C helm-repo diff --cached --quiet; then
@@ -217,30 +244,24 @@ jobs:
             exit 0
           fi
 
-          git -C helm-repo commit -m "Deploy retail shop ${GITHUB_SHA:0:12}"
+          git -C helm-repo commit -m "Deploy retail shop with nginx ingress layer ${GITHUB_SHA:0:12}"
           git -C helm-repo push origin "${branch}"
           repo_owner="${HELM_REPO%%/*}"
 
-          if ! existing_pr=$(gh api "repos/${HELM_REPO}/pulls" \
+          existing_pr=$(gh api "repos/${HELM_REPO}/pulls" \
             --method GET \
             -f state=open \
             -f head="${repo_owner}:${branch}" \
             -f base=main \
-            --jq '.[0].html_url // ""' 2>&1); then
-            echo "::error::The branch was pushed, but GitHub could not list pull requests in ${HELM_REPO}."
-            echo "::error::Grant GH_PAT access to ${HELM_REPO} with Contents read/write and Pull requests read/write permissions."
-            echo "::error::GitHub API response: ${existing_pr}"
-            exit 1
-          fi
+            --jq '.[0].html_url // ""' 2>&1)
 
-          if [[ -n "${existing_pr}" ]]; then
-            echo "A pull request for this deployment already exists: ${existing_pr}"
-            exit 0
+          if [[ -z "${existing_pr}" ]]; then
+            echo "Creating a new GitOps tracking pull request..."
+            gh pr create --repo "${HELM_REPO}" \
+              --title "Deploy version ${GITHUB_SHA:0:12} with Unified Ingress Infrastructure" \
+              --body "Automated workflow bundling retail application subcharts alongside the NGINX Ingress controller and Argo CD proxy routing rules." \
+              --head "${branch}" \
+              --base main
+          else
+            echo "Tracking pull request already exists at: ${existing_pr}"
           fi
-
-          gh pr create \
-            --repo "${HELM_REPO}" \
-            --title "Deploy retail shop ${GITHUB_SHA:0:12}" \
-            --body "Automated deployment update from application repository commit ${GITHUB_SHA}." \
-            --head "${branch}" \
-            --base main

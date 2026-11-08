@@ -24,3 +24,6 @@ dependencies:
     alias: ui
     version: 1.6.3
     repository: file://../../ui/chart
+  - name: ingress-nginx
+    version: 4.10.0
+    repository: https://github
