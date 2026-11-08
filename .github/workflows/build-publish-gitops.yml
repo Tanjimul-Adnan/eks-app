@@ -152,9 +152,9 @@ jobs:
           from pathlib import Path
           import sys
 
-          chart_dir = Path(sys.argv)
-          username = sys.argv
-          image_tag = sys.argv
+          chart_dir = Path(sys.argv[1])
+          username = sys.argv[2]
+          image_tag = sys.argv[3]
 
           chart_file = chart_dir / "Chart.yaml"
           chart = chart_file.read_text()
@@ -189,15 +189,17 @@ jobs:
                   ]
               )
 
-          # Inject Global Ingress Values with specific cheetah dpdns subdomains
+          # Align values mapping structure for .yaml.gotmpl overlays
           lines.extend(
               [
                   "ingress:",
                   "  enabled: true",
-                  "ui:",
                   "  host: retail-store.xcheetah1.dpdns.org",
                   "argocd:",
                   "  host: argocd.xcheetah1.dpdns.org",
+                  "ui:",
+                  "  enabled: true",
+                  "  host: retail-store.xcheetah1.dpdns.org",
                   "ingress-nginx:",
                   "  controller:",
                   "    replicaCount: 2",
@@ -247,7 +249,7 @@ jobs:
             -f state=open \
             -f head="${repo_owner}:${branch}" \
             -f base=main \
-            --jq '..html_url // ""' 2>&1)
+            --jq '.[0].html_url // ""' 2>&1)
 
           if [[ -z "${existing_pr}" ]]; then
             echo "Creating a new GitOps tracking pull request..."
