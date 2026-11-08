@@ -1,6 +1,6 @@
 services:
   ui:
-    ports: !override
+    ports: 
       - "8080:8080"
     environment:
       - RETAIL_UI_ENDPOINTS_CATALOG=http://catalog:8080
@@ -22,18 +22,18 @@ services:
         restart: true
 
   catalog:
-    ports: !override []
+    ports: []
   cart:
-    ports: !override []
+    ports: []
   orders:
-    ports: !override []
+    ports: []
   orders-db:
-    ports: !override []
+    ports: []
   checkout:
-    ports: !override []
+    ports: []
     environment:
       - RETAIL_CHECKOUT_ENDPOINTS_ORDERS=http://orders:8080
   checkout-redis:
-    ports: !override []
+    ports: []
   rabbitmq:
-    ports: !override []
+    ports: []
