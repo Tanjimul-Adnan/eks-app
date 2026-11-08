@@ -119,7 +119,6 @@ jobs:
           helm repo add ingress-nginx https://github.io
           helm repo update
 
-
       - name: Package application chart and update GitOps values
         shell: bash
         env:
@@ -250,7 +249,7 @@ jobs:
             -f state=open \
             -f head="${repo_owner}:${branch}" \
             -f base=main \
-            --jq '.[0].html_url // ""' 2>&1)
+            --jq '..html_url // ""' 2>&1)
 
           if [[ -z "${existing_pr}" ]]; then
             echo "Creating a new GitOps tracking pull request..."
