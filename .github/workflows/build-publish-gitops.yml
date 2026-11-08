@@ -152,6 +152,7 @@ jobs:
           from pathlib import Path
           import sys
 
+          # Fixed: Added indexing to resolve correct string values from array
           chart_dir = Path(sys.argv[1])
           username = sys.argv[2]
           image_tag = sys.argv[3]
