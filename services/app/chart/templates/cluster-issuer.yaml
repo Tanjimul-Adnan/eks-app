@@ -1,0 +1,16 @@
+{{- if and .Values.ingress.enabled .Values.ingress.tls.enabled }}
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: {{ .Values.ingress.tls.clusterIssuer }}
+spec:
+  acme:
+    server: {{ .Values.ingress.tls.acmeServer | quote }}
+    email: {{ required "ingress.tls.email is required when TLS is enabled" .Values.ingress.tls.email | quote }}
+    privateKeySecretRef:
+      name: {{ printf "%s-account-key" .Values.ingress.tls.clusterIssuer }}
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: nginx
+{{- end }}
