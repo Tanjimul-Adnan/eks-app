@@ -119,7 +119,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          helm repo add ingress-nginx https://github.io
+          helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
           helm repo update
 
       - name: Package application chart and update GitOps values
@@ -192,6 +192,13 @@ jobs:
                       "    pullPolicy: IfNotPresent",
                   ]
               )
+              if service == "ui":
+                  lines.extend(
+                      [
+                          "  enabled: true",
+                          "  host: retail-store.xcheetah1.dpdns.org",
+                      ]
+                  )
 
           # Align values mapping structure for .yaml.gotmpl overlays
           lines.extend(
@@ -201,9 +208,6 @@ jobs:
                   "  host: retail-store.xcheetah1.dpdns.org",
                   "argocd:",
                   "  host: argocd.xcheetah1.dpdns.org",
-                  "ui:",
-                  "  enabled: true",
-                  "  host: retail-store.xcheetah1.dpdns.org",
                   "ingress-nginx:",
                   "  controller:",
                   "    replicaCount: 2",
