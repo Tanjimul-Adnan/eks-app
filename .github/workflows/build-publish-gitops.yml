@@ -152,7 +152,6 @@ jobs:
           from pathlib import Path
           import sys
 
-          # Fixed array indexes to extract precise script strings from the wrapper context
           chart_dir = Path(sys.argv[1])
           username = sys.argv[2]
           image_tag = sys.argv[3]
@@ -250,7 +249,7 @@ jobs:
             -f state=open \
             -f head="${repo_owner}:${branch}" \
             -f base=main \
-            --jq '..html_url // ""' 2>&1)
+            --jq '.[0].html_url // ""' 2>&1)
 
           if [[ -z "${existing_pr}" ]]; then
             echo "Creating a new GitOps tracking pull request..."
