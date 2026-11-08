@@ -152,7 +152,7 @@ jobs:
           from pathlib import Path
           import sys
 
-          # Fixed: Added indexing to resolve correct string values from array
+          # Fixed array indexes to extract precise script strings from the wrapper context
           chart_dir = Path(sys.argv[1])
           username = sys.argv[2]
           image_tag = sys.argv[3]
@@ -233,7 +233,7 @@ jobs:
           branch="automation/retail-shop-${GITHUB_SHA:0:12}"
 
           git -C helm-repo config user.name "github-actions[bot]"
-          git -C helm-repo config user.email "41898282+github-actions[bot]@://github.com"
+          git -C helm-repo config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git -C helm-repo add apps/retail-shop
 
           if git -C helm-repo diff --cached --quiet; then
